@@ -1,0 +1,7 @@
+./Data/*
+.__py__cache
+./PYTHON/__pychace__
+*.pyc
+/PYTHON/DATA/*
+/DATA*
+/DATA/
