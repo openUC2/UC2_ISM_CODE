@@ -11,6 +11,8 @@ from scipy.ndimage.filters import maximum_filter
 import scipy.signal
 import cv2
 from scipy.ndimage.filters import gaussian_filter
+import NanoImagingPack as nip
+import ismtools2 as ism
 
 def reject_outliers(data, m=1):
     return data[abs(data - np.mean(data)) < m * np.std(data)]
@@ -270,3 +272,61 @@ def alignImages(im1, im2):
     im1Reg = cv2.warpPerspective(im1, h, (width, height))
        
     return im1Reg, h
+
+
+def readismsack(rawfile, darkfile=None, backgroundval=0, myupscale=1, is_reducetime=False, is_denoise=False, cropsize=None):
+    '''
+    
+
+    Parameters
+    ----------
+    rawfile : TYPE
+        DESCRIPTION.
+    darkfile : TYPE, optional
+        DESCRIPTION. The default is None.
+    backgroundval : TYPE, optional
+        DESCRIPTION. The default is 0.
+    myupscale : TYPE, optional
+        DESCRIPTION. The default is 1.
+    is_reducetime : TYPE, optional
+        DESCRIPTION. The default is False.
+    is_denoise : TYPE, optional
+        DESCRIPTION. The default is False.
+    cropsize : TYPE, optional
+        DESCRIPTION. The default is None.
+
+    Returns
+    -------
+    ismstack : TYPE
+        DESCRIPTION.
+
+    '''
+    print('Read Image Stack ... This may take a while!')
+    
+    ismstack_raw = ism.readtifstack(rawfile, scalesize = myupscale, is_denoise = False)
+    ismstack = ismstack_raw.copy()
+       
+    # make quadratic
+    ismstack = nip.extract(ismstack, (np.min(ismstack.shape[1:])))-backgroundval
+    ismstack = ismstack/np.expand_dims(np.expand_dims(np.array(np.mean(ismstack,(1,2))),-1),-1)
+    
+    #ismstack = ismstack[0,] # use only one frame
+    if darkfile is not None:
+        darkstack = ism.readtifstack(darkfile, scalesize = myscalesize, is_denoise = False )-backgroundval
+        
+        mydarkframe = np.mean(darkstack,0)*0
+        mydarkframe = nip.extract(mydarkframe, (np.min(mydarkframe.shape),np.min(mydarkframe.shape)))
+        ismstack = ismstack-np.expand_dims(mydarkframe,0)
+    else:
+        mydarkframe = np.zeros(ismstack.shape[0:2])
+       
+    if cropsize is not None:
+       mydarkframe = nip.extract(mydarkframe,(cropsize ,cropsize), centerpos=(128,128))
+       ismstack = nip.extract(ismstack, (ismstack.shape[0], cropsize ,cropsize), centerpos=(128,128))
+
+    # filter out double-time shots
+    if(is_reducetime):
+        ismstack = ism.reducetime(ismstack)
+    
+    return ismstack
+

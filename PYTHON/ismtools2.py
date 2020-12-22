@@ -92,8 +92,9 @@ def get_peaks_from_image(myframe, mindist=15, blurkernel = 2,  is_debug=True):
     # visualize the peaks
     if is_debug:
         plt.figure()
-        plt.subplot(121), plt.plot(myxycoords[:,1],myxycoords[:,0],'x'), plt.title('Detected Peaks'), 
-        plt.subplot(122), plt.imshow(np.float32(mypeaks/np.float32(np.max(mypeaks + mypeaks))), cmap='hot')
+        plt.subplot(131), plt.plot(myxycoords[:,1],myxycoords[:,0],'x'), plt.title('Detected Peaks'), 
+        plt.subplot(132), plt.imshow(nip.gaussf(np.float32(mypeaks/np.float32(np.max(mypeaks + mypeaks))),1), cmap='hot')
+        plt.subplot(133), plt.imshow(np.float32(myframe), cmap='hot')
         plt.show()
 
 
@@ -224,6 +225,10 @@ def fit_illpattern_ism(mypeaks_pos, polyn = 2, max_std = 2., searchdist_vert = 6
                     if(is_debug):
                         plt.plot(my_peaks_in_range[:,0], my_peaks_in_range[:,1], 'x'), plt.axis('equal')
                         plt.plot(my_peaks_in_range_fit_eval, vert_eval, '-'), plt.axis('equal')
+                        plt.xlim(right=max_pos_vert) #xmax is your value
+                        plt.xlim(left=min_pos_vert) #xmin is your value
+                        plt.ylim(top=max_pos_horz) #ymax is your value
+                        plt.ylim(bottom=min_pos_horz) #ymin is your value
         except(ValueError):
             if(is_debug): print('Err')
         except(TypeError):
@@ -255,7 +260,7 @@ def fit_illpattern_ism(mypeaks_pos, polyn = 2, max_std = 2., searchdist_vert = 6
 
         if((p_grating_vert_estimate[iiter_vert+1] - p_grating_vert_estimate[iiter_vert] - iiter_vert_missing*g_grating_vert_estimate)>(g_grating_vert_estimate*1.8)): # see if there is a missing line in the grid
             iiter_vert_missing += 1
-            print("Changed: "+ str(iiter_vert_missing)+"/"+str(iiter_vert))
+            if is_debug: print("Changed: "+ str(iiter_vert_missing)+"/"+str(iiter_vert))
             # add a line with a distance of the grating constant after the current one - we will copy the coordinates from the previous line (it's simpler..)
             my_fit_vert_iter_new = my_fit_vert[iiter_vert]  + (iiter_vert_missing)*g_grating_vert_estimate
             my_fit_vert_new.append(my_fit_vert_iter_new)
@@ -321,6 +326,10 @@ def fit_illpattern_ism(mypeaks_pos, polyn = 2, max_std = 2., searchdist_vert = 6
                     if(is_debug):
                         plt.plot(my_peaks_in_range[:,0], my_peaks_in_range[:,1], 'x'), plt.axis('equal')
                         plt.plot(horz_eval, my_peaks_in_range_fit_eval, '-'), plt.axis('equal')
+                        plt.xlim(right=max_pos_vert) #xmax is your value
+                        plt.xlim(left=min_pos_vert) #xmin is your value
+                        plt.ylim(top=max_pos_horz) #ymax is your value
+                        plt.ylim(bottom=min_pos_horz) #ymin is your value                        
         except(ValueError):
             if(is_debug): print('Err')
         except(TypeError):
@@ -386,18 +395,31 @@ def generate_illumination_grid(test_frame, my_fit_vert, my_vert, my_fit_horz, my
     # since we are very lazy, we do that on an upsampled  integer grid 
     my_grid = np.zeros((test_frame.shape[0], test_frame.shape[1]))
     
+    # resample to original grid - hacky, I know
+    #my_fit_vert = nip.resample(my_fit_vert,(1,test_frame.shape[1]/my_fit_vert.shape[1]))
+    #my_vert  = nip.resample(my_vert,(1,test_frame.shape[1]/my_vert.shape[0]))
+    
     # draw for vertical lines
     for i in range(0, my_fit_vert.shape[0]): 
-        my_index_m,my_index_n = np.uint32((my_fit_vert[i,:])),np.uint32((my_vert))
+        my_index_m,my_index_n = np.uint32(np.abs(my_fit_vert[i,:])),np.uint32(np.abs(my_vert))
+        my_index_tmp = my_index_m.copy()
+        my_index_m = my_index_m[my_index_tmp<my_grid.shape[1]] # hacky, but should cleanup index problems
+        my_index_n = my_index_n[my_index_tmp<my_grid.shape[1]]
         try:
             my_grid[my_index_m,my_index_n]+=1
         except:
             if is_debug: print('Index out of bounds..')
                 
-    
+     # resample to original grid
+    #my_fit_horz = nip.resample(my_fit_horz,(1,test_frame.shape[1]/my_fit_horz.shape[1]))
+    #my_horz  = nip.resample(my_horz,(1,test_frame.shape[1]/my_horz.shape[0]))
+       
     # draw for horizontal lines
     for i in range(0, my_fit_horz.shape[0]): 
-        my_index_n,my_index_m = np.uint32((my_fit_horz[i,:])),np.uint32((my_horz))
+        my_index_n,my_index_m = np.int32((np.abs(my_fit_horz[i,:]))),np.int32((np.abs(my_horz)))
+        my_index_tmp = my_index_m.copy()
+        my_index_m = my_index_m[my_index_tmp<my_grid.shape[1]] # hacky, but should cleanup index problems
+        my_index_n = my_index_n[my_index_tmp<my_grid.shape[1]]
         try:
             my_grid[my_index_m,my_index_n]+=1
         except:
@@ -637,3 +659,91 @@ def find_shift_grid(ismstack,mygrid_raw, cropsize):
     myshifts[:,0] = ism.fit_line(myshifts[:,0], True)
 
     return(myshifts)
+
+def compute_superconfocal(ismstack, is_debug):
+    print('First we want to produce a super-confocal image R. Heintzman et al 2006')
+    superconfocal = np.max(ismstack, axis=0)+np.min(ismstack,axis=0)-2*np.mean(ismstack,axis=(0))
+    
+    if is_debug:
+        plt.subplot(121), plt.title('Superconfocal'), plt.imshow(superconfocal, cmap='gray'), plt.colorbar(), plt.show()
+    return superconfocal
+
+def compute_brightfield(ismstack, is_debug):
+    print('We compute the BF equivalent as the projection of the stack')
+    bf = np.mean(ismstack, axis=0) 
+    
+    if is_debug:
+        plt.subplot(121), plt.title('Brightfield'), plt.imshow(bf, cmap='gray'), plt.colorbar(), plt.show()
+    return bf
+
+
+def estimate_ism_pars(testframe, mindist, radius_ft=None, is_debug=False):
+    '''
+    Estimates the rotation and grating constant of the ISM grid
+    
+    Parameters
+    ----------
+    testframe : 2D numpy array (raw ISM frame)
+        DESCRIPTION.
+    mindist : minimum distance for peak detection (between 2 illuminating spots)
+        DESCRIPTION.
+    radius_ft : TYPE, optional
+        DESCRIPTION. The default is None.
+
+    Returns
+    -------
+    searchdist : TYPE
+        DESCRIPTION.
+    rottheta : TYPE
+        DESCRIPTION.
+
+    '''
+    print('Estimating the peaks from a single frame.')
+    mysize = testframe.shape[1]    # size from the original 
+    
+    if radius_ft is None:
+        radius_ft = .03
+        print("Setting the filter size to: "+str(radius_ft))
+        
+        
+    # estimate grating constant 
+    myismspectrum = np.log(1+np.abs(nip.ft(testframe)*(nip.rr(testframe,freq='ftfreq')>radius_ft)))
+    myismspectrum_thresh=myismspectrum.copy()
+    myismspectrum_thresh[myismspectrum < (np.max(myismspectrum)*.9)]=0
+    mypeaks , mypeaks_pos = get_peaks_from_image(myismspectrum_thresh, mindist=mindist, blurkernel = 4, is_debug=is_debug)
+    
+    # choose peaks with highest power
+    mymaxpeakpos = np.where((myismspectrum_thresh * mypeaks)>np.mean(myismspectrum_thresh[(myismspectrum_thresh * mypeaks)>1]))
+    
+    # find grating constants and rotation angle
+    
+    # rearrange coordinates
+    index_y_1 = mymaxpeakpos[0][0] 
+    index_y_2 = mymaxpeakpos[0][1]
+    index_x_1 = mymaxpeakpos[1][0]
+    index_x_2 = mymaxpeakpos[1][1]
+
+    # estimate grating
+    d_x = index_x_1 - index_x_2     # distance between x coordinates 
+    d_y = index_y_1 - index_y_2     # distance between x coordinates 
+    dr_x = np.sqrt(d_x**2+d_x**2)   # absolute distnace in x
+    dr_y = np.sqrt(d_y**2+d_y**2)   # absolute distnace in y (e.g. pythagoras)
+    
+    # estimate rotation
+    rottheta = -(90+np.arctan2(d_x,d_y)/np.pi*180)
+    
+    # grating periods
+    g_x = (mysize)/(dr_x/2) # grating constant for x as nyquist sampling
+    g_y = (mysize)/(dr_y/2) # grating constant for y as nyquist sampling
+    
+    myg = np.min((g_x,g_y))
+    print('Gratingconstant: '+str(myg))
+    print('rotation : '+str(rottheta))
+    
+    # assign values for more robust grating search
+    # adjust searchdistance
+    searchdist = int(myg*.5) # minimum seperation between two different lines (vertically)
+    
+    plt.subplot(121), plt.title('spectrum of pat'),plt.imshow(myismspectrum, cmap='gray')
+    plt.subplot(122), plt.title('detected peaks'), plt.plot(mymaxpeakpos,'x')
+    return searchdist, rottheta
