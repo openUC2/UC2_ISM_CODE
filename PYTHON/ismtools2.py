@@ -20,7 +20,6 @@ from skimage.restoration import (denoise_tv_chambolle, denoise_bilateral,
                                  denoise_wavelet, estimate_sigma)
 
     
-import ismtools as ism
 import utils as utils
 
 import NanoImagingPack as nip
@@ -709,14 +708,15 @@ def estimate_ism_pars(testframe, mindist, radius_ft=None, is_debug=False):
     # estimate grating constant 
     myismspectrum = np.log(1+np.abs(nip.ft(testframe)*(nip.rr(testframe,freq='ftfreq')>radius_ft)))
     myismspectrum_thresh=myismspectrum.copy()
-    myismspectrum_thresh[myismspectrum < (np.max(myismspectrum)*.9)]=0
+    myismspectrum_thresh[myismspectrum < (np.max(myismspectrum)*.85)]=0
     mypeaks , mypeaks_pos = get_peaks_from_image(myismspectrum_thresh, mindist=mindist, blurkernel = 4, is_debug=is_debug)
     
     # choose peaks with highest power
-    mymaxpeakpos = np.where((myismspectrum_thresh * mypeaks)>np.mean(myismspectrum_thresh[(myismspectrum_thresh * mypeaks)>1]))
+    mymaxpeakpos = np.where((myismspectrum_thresh * mypeaks)>np.mean(np.array(myismspectrum_thresh[(myismspectrum_thresh * mypeaks)>0])))
     
     # find grating constants and rotation angle
     
+    plt.subplot(121), plt.title('spectrum of pat'),plt.imshow(myismspectrum, cmap='gray')
     # rearrange coordinates
     index_y_1 = mymaxpeakpos[0][0] 
     index_y_2 = mymaxpeakpos[0][1]
@@ -744,6 +744,5 @@ def estimate_ism_pars(testframe, mindist, radius_ft=None, is_debug=False):
     # adjust searchdistance
     searchdist = int(myg*.5) # minimum seperation between two different lines (vertically)
     
-    plt.subplot(121), plt.title('spectrum of pat'),plt.imshow(myismspectrum, cmap='gray')
-    plt.subplot(122), plt.title('detected peaks'), plt.plot(mymaxpeakpos,'x')
+    plt.subplot(122), plt.title('detected peaks'), plt.plot(mymaxpeakpos,'x'),plt.show()
     return searchdist, rottheta

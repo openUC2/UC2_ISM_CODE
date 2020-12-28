@@ -24,10 +24,8 @@ import NanoImagingPack as nip
 #%  --------------------------------------------------------------------------
 # Define input file
 myfolder = './DATA/'
-myscalesize=2 # downsample data - it's very likely that it's oversampled by 2x
-mydarkfile = None #'Alvium_Dark_500ms_gain11.tif'
-myvideofile = '20201218-165444_ISM_HeLa_AF647_texp-500_gain_rot_crop.tif'
-myvideofile = '2020_12_20-ISM_HeLa_AF647_exp500_gain5.tif'
+myscalesize = .5 # downsample data - it's very likely that it's oversampled by 2x
+myvideofile = '23.10.2020_800x600_HeLa_SiR_newSample_3.tif'
 myvideofile = '20201221-114636_ISM_HeLa_AF647_texp-500_gain-2.tif'
 mydarkfile = None
 mybackground = 255
@@ -49,20 +47,19 @@ mindist = np.min((searchdist_vert,searchdist_horz) )    # minimal distance betwe
   
 # Switches
 is_debug = False         # want to display/save all intermediate results?
-is_video = True         # want to write the video?
 is_fillmissing = True   # fill wholes in the grid?
 is_usepeakfitonly = False
 cropsize = None
 is_denoise = False 
-is_use_nearest = True   # For all localized emitters replace grid coordinates with nearest peak?
+is_use_nearest = True # For all localized emitters replace grid coordinates with nearest peak?
 is_findduplicates = False
-if not mypinholesize%2: print("pinholesize must be an odd number! "), Error
-
 #%% --------------------------------------------------------------------------
 #
 #--------------------------CODE STARTS HERE-----------------------------------
 #
 #%  --------------------------------------------------------------------------
+
+if not mypinholesize%2: print("pinholesize must be an odd number! "), Error
 
 
 rawfile = myfolder + myvideofile
@@ -70,10 +67,9 @@ if mydarkfile is not None:
     darkfile = myfolder + mydarkfile
 else: 
     darkfile = None
-    
 #%%-------------------------- FILE I/O ---------------------------------------
 ismstack = utils.readismsack(rawfile, darkfile=None, backgroundval=0, myupscale=myscalesize, is_reducetime=is_reducetime, is_denoise=is_denoise, cropsize=cropsize)
-tif.imsave(myfolder + os.path.split(myvideofile)[-1]+'_reducedtime.tif',ismstack)
+#tif.imsave(myfolder + os.path.split(myvideofile)[-1]+'_reducedtime.tif',ismstack)
 Nimages = ismstack.shape[0]     # How many images you want to use for the ISM image? (fps~20, illumination~5)
 mysize = ismstack.shape[1]    # size from the original 
 
@@ -84,12 +80,13 @@ mybf = ism.compute_brightfield(ismstack, is_debug)
 
 
 #%%-------------------------- Peak-Detection ---------------------------------
-myg, myrot = ism.estimate_ism_pars(testframe=ismstack[2,:,:], mindist=mindist, radius_ft=0.02, is_debug=is_debug)
+myg, myrot = ism.estimate_ism_pars(testframe=ismstack[2,:,:], mindist=mindist, radius_ft=0.01, is_debug=is_debug)
 mindist = myg
 rottheta = myrot
 my_g_vert = my_g_horz = myg
 
 #%%-------------------------- Allocate Memory ---------------------------------
+
 # save all grids 
 my_all_grid = []
 my_all_peaks = []
@@ -111,7 +108,7 @@ for myframeindex in range(0,Nimages): # some frame index which is used to estima
     #% compute peaks from frame
     # compute the peaks from the single frame - upscale it to have sub-pixel accuracy?
     test_frame = np.squeeze(ismstack[myframeindex,:,:])                                     # select frame
-    if rottheta!= 0: test_frame = nip.rot2d(test_frame,rottheta,padding=False)              # rotate if necessary
+    if rottheta!= 0: test_frame = nip.rot2d(test_frame,rottheta,padding=False)#; if(is_debug): print("Rotating frame")              # rotate if necessary
     mypeaks_map, mypeaks_pos = ism.get_peaks_from_image(test_frame,mindist=mindist, is_debug=is_debug)
     my_all_peaks.append(mypeaks_pos.T)                                                      # save frames for later
     
@@ -145,20 +142,22 @@ for myframeindex in range(0,Nimages): # some frame index which is used to estima
         
     
         if is_use_nearest:
-            # find shift between groundtruth peak (peakfit) and grid fit
-            from scipy import spatial        
-            tree = spatial.KDTree(np.vstack((my_grid_index)).T)
-            mydist, myindex = tree.query(mypeaks_pos)
-            
-            # REPLACE WITH LOCALIZATION?!
-            my_grid_index[0][myindex] = mypeaks_pos[:,0]
-            my_grid_index[1][myindex] = mypeaks_pos[:,1]
-            
-            if(is_debug):
-                plt.plot(np.vstack(my_grid_index)[0,],np.vstack(my_grid_index)[1,],'o')
-                plt.plot(np.vstack(my_grid_index)[0,myindex],np.vstack(my_grid_index)[1,myindex],'o')
-                plt.plot(mypeaks_pos[:,0],mypeaks_pos[:,1],'x')
-
+            try:
+                # find shift between groundtruth peak (peakfit) and grid fit
+                from scipy import spatial        
+                tree = spatial.KDTree(np.vstack((my_grid_index)).T)
+                mydist, myindex = tree.query(mypeaks_pos)
+                
+                # REPLACE WITH LOCALIZATION?!
+                my_grid_index[0][myindex] = mypeaks_pos[:,0]
+                my_grid_index[1][myindex] = mypeaks_pos[:,1]
+                
+                if(is_debug):
+                    plt.plot(np.vstack(my_grid_index)[0,],np.vstack(my_grid_index)[1,],'o')
+                    plt.plot(np.vstack(my_grid_index)[0,myindex],np.vstack(my_grid_index)[1,myindex],'o')
+                    plt.plot(mypeaks_pos[:,0],mypeaks_pos[:,1],'x')
+            except:
+                print("Error with use nearest..")
         # append grid to the already exisiting grid points    
         my_grid_old += my_grid
     
@@ -287,7 +286,7 @@ for i_image in np.arange(0,Nimages-1):#range(0, 2, Nimages):
 print('SOMETHING IS WRONG WITH THE BACKGROUND ESTIMATEION!')
 ism_result_mod = (ism_result/np.max(ism_result))/(all_sum_pinholes/np.max(nip.gaussf(all_sum_pinholes,0)))#.25*gaussian_filter(testpinholes,0.7)#testpinholes
 ism_result_mod[np.isnan(ism_result_mod)]=0
-ism_result_final = np.true_divide(ism_result,all_sum_pinholes)
+ism_result_final = ism_result-all_sum_pinholes
 
 
 # Show the final image
@@ -296,7 +295,7 @@ cmap='hot'
 plt.subplot(221), plt.title('Superconfocal'), plt.imshow(mysuperconfocal, cmap=cmap)#, plt.colorbar()
 plt.subplot(222), plt.title('Brightfield'), plt.imshow(mybf, cmap=cmap)#, plt.colorbar()
 plt.subplot(223), plt.title('ISM (mod)'), plt.imshow(ism_result_mod, cmap=cmap, vmin=0)#, plt.colorbar()#, plt.show()
-plt.subplot(224), plt.title('ISM (result)'), plt.imshow(ism_result_final, cmap=cmap, vmin=0)#, plt.colorbar()#, plt.show()
+plt.subplot(224), plt.title('ISM (result)'), plt.imshow(ism_result, cmap=cmap, vmin=0)#, plt.colorbar()#, plt.show()
 plt.savefig(myfolder + os.path.split(myvideofile)[-1]+'_Subplot.png')
 
 #%
